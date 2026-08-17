@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 440" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect width="920" height="440" fill="#fafbfc"/>
+  <text x="460" y="32" text-anchor="middle" font-size="20" font-weight="700" fill="#1a1a1a">DSH Public Access — Architecture</text>
+
+  <!-- Client -->
+  <rect x="24" y="150" width="170" height="110" rx="10" fill="#ffffff" stroke="#1f6feb" stroke-width="2"/>
+  <text x="109" y="182" text-anchor="middle" font-size="14" font-weight="600" fill="#1f6feb">Client</text>
+  <text x="109" y="205" text-anchor="middle" font-size="12" fill="#444">Browser</text>
+  <text x="109" y="224" text-anchor="middle" font-size="12" fill="#444">Phone / PC</text>
+
+  <!-- Cloudflare Edge -->
+  <rect x="270" y="130" width="220" height="150" rx="10" fill="#fff8e6" stroke="#f6821f" stroke-width="2"/>
+  <text x="380" y="162" text-anchor="middle" font-size="14" font-weight="600" fill="#b45a00">Cloudflare Edge</text>
+  <text x="380" y="186" text-anchor="middle" font-size="12" fill="#444">HTTPS · TLS certificate</text>
+  <text x="380" y="206" text-anchor="middle" font-size="12" fill="#444">dsh.your-domain.com</text>
+  <text x="380" y="230" text-anchor="middle" font-size="12" fill="#666">Optional: Cloudflare Access</text>
+  <text x="380" y="248" text-anchor="middle" font-size="12" fill="#666">(email OTP identity check)</text>
+
+  <!-- Your Mac -->
+  <rect x="560" y="36" width="336" height="376" rx="12" fill="#eef2f7" stroke="#24292f" stroke-width="2"/>
+  <text x="728" y="66" text-anchor="middle" font-size="14" font-weight="700" fill="#24292f">Your Mac (localhost)</text>
+
+  <!-- Tunnel -->
+  <rect x="586" y="90" width="284" height="64" rx="8" fill="#ffffff" stroke="#0969da" stroke-width="1.5"/>
+  <text x="728" y="114" text-anchor="middle" font-size="13" font-weight="600" fill="#0969da">cloudflared tunnel</text>
+  <text x="728" y="134" text-anchor="middle" font-size="11" fill="#555">outbound TLS connection · no public IP needed</text>
+
+  <!-- Proxy -->
+  <rect x="586" y="184" width="284" height="130" rx="8" fill="#ffffff" stroke="#0a7d3a" stroke-width="1.5"/>
+  <text x="728" y="208" text-anchor="middle" font-size="13" font-weight="600" fill="#0a7d3a">Auth proxy · 127.0.0.1:3099</text>
+  <text x="604" y="232" font-size="11" fill="#333">① Basic Auth once → session cookie</text>
+  <text x="604" y="252" font-size="11" fill="#333">② Rewrite Host / Origin → loopback</text>
+  <text x="604" y="272" font-size="11" fill="#333">③ Inject crypto.randomUUID polyfill</text>
+  <text x="604" y="296" font-size="11" fill="#888">(bypasses DSH /api trust fence)</text>
+
+  <!-- DSH -->
+  <rect x="586" y="336" width="284" height="56" rx="8" fill="#ffffff" stroke="#cf222e" stroke-width="1.5"/>
+  <text x="728" y="360" text-anchor="middle" font-size="13" font-weight="600" fill="#cf222e">DeepSeek Harness Web</text>
+  <text x="728" y="379" text-anchor="middle" font-size="11" fill="#555">127.0.0.1:3080</text>
+
+  <!-- Arrows -->
+  <line x1="194" y1="205" x2="266" y2="205" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="230" y="196" text-anchor="middle" font-size="11" fill="#555">HTTPS</text>
+
+  <line x1="490" y1="175" x2="582" y2="122" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="520" y="142" text-anchor="middle" font-size="11" fill="#555" transform="rotate(-30 520 142)">encrypted tunnel</text>
+
+  <line x1="728" y1="154" x2="728" y2="180" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="746" y="172" font-size="10" fill="#555">HTTP</text>
+
+  <line x1="728" y1="314" x2="728" y2="332" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="746" y="328" font-size="10" fill="#555">rewritten headers</text>
+
+  <!-- Footer -->
+  <text x="460" y="426" text-anchor="middle" font-size="11" fill="#888">Every public request must pass the auth layer — never expose :3080 directly</text>
+</svg>

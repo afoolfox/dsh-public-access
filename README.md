@@ -1,27 +1,37 @@
 # DSH Public Access — DeepSeek Harness 公网安全访问方案
 
+**[中文](README.md) | [English](README.en.md)**
+
 让 **DeepSeek Harness Web GUI**（默认只监听 `127.0.0.1:3080` 的 Agent 控制台）可以通过你自己的域名，从**任意设备（含手机）安全地公网访问**，并支持开机自启。
 
 > ⚠️ 安全第一：这个 GUI 背后是**能执行任意命令、读写任意文件的完整 Agent 控制台（等效 RCE）**。本方案默认**绝不裸奔端口**，公网入口必须套一层身份认证。
 
 ## 架构
 
-```
-你的浏览器（手机/电脑）
-      │ HTTPS（Cloudflare 边缘签发证书）
-      ▼
-Cloudflare 边缘（dsh.your-domain.com，可选叠加 Cloudflare Access 身份认证）
-      │ 出站 TLS 隧道（无需公网 IP、无需路由器开端口）
-      ▼
-cloudflared（本机）────────────────┐
-      │                            │
-      ▼                            │
-认证反代 dsh-gateway-proxy.mjs (127.0.0.1:3099)
-      │ ① 认证：Basic Auth 首次 → 会话 Cookie（避免反复弹登录框）
-      │ ② 头改写：Host/Origin → 127.0.0.1:3080（绕过 DSH 的 /api 信任围栏）
-      │ ③ 注入 crypto.randomUUID polyfill（兼容老浏览器）
-      ▼
-DeepSeek Harness Web (127.0.0.1:3080)
+![架构图](docs/architecture.svg)
+
+```mermaid
+flowchart LR
+    subgraph Client["客户端"]
+        B["浏览器（手机 / 电脑）"]
+    end
+
+    subgraph CF["Cloudflare 边缘"]
+        E["HTTPS 边缘<br/>dsh.your-domain.com"]
+        A["（可选）Cloudflare Access<br/>邮箱验证码身份认证"]
+    end
+
+    subgraph Mac["你的 Mac（本机）"]
+        T["cloudflared 隧道<br/>出站 TLS 连接 · 无需公网 IP"]
+        P["认证反代 dsh-gateway-proxy.mjs<br/>127.0.0.1:3099<br/>① Basic Auth → 会话 Cookie<br/>② Host/Origin 改写<br/>③ randomUUID polyfill"]
+        D["DeepSeek Harness Web<br/>127.0.0.1:3080"]
+    end
+
+    B -->|"HTTPS"| E
+    E --> A
+    A -->|"加密隧道"| T
+    T -->|"本机 HTTP"| P
+    P -->|"改写后的请求头"| D
 ```
 
 三条 macOS launchd 服务实现**登录自启 + 崩溃自愈**：`com.dsh.web` / `com.dsh.proxy` / `com.dsh.tunnel`。
@@ -100,6 +110,8 @@ DeepSeek Harness Web (127.0.0.1:3080)
 ## 文件说明
 
 ```
+README.md / README.en.md     中文 / 英文方案文档
+docs/architecture.svg        架构图（SVG，可直接引用）
 proxy/dsh-gateway-proxy.mjs  认证反代（Cookie 会话 + Host/Origin 改写 + polyfill），唯一"业务代码"
 cloudflared/config.example.yml  Cloudflare 隧道配置模板
 launchd/*.plist               三个 macOS 开机自启服务（DSH/反代/隧道）
