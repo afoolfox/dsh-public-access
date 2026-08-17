@@ -1,0 +1,15 @@
+# Cloudflare Tunnel 配置模板
+# 复制为 config.yml 放到 ~/.cloudflared/ 并替换占位符：
+#   <YOUR_TUNNEL_ID>        ← cloudflared tunnel create <name> 输出的 UUID
+#   <YOUR_USER_NAME>        ← 你的系统用户名（credentials-file 的绝对路径）
+#   dsh.example.com         ← 你的公网域名（已把 NS 接入 Cloudflare 的域名子域）
+#
+# 认证反代监听 127.0.0.1:3099（先启动 dsh-gateway-proxy.mjs 再跑隧道）
+
+tunnel: <YOUR_TUNNEL_ID>
+credentials-file: /Users/<YOUR_USER_NAME>/.cloudflared/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  - hostname: dsh.example.com
+    service: http://127.0.0.1:3099
+  - service: http_status:404

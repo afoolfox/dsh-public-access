@@ -1,0 +1,9 @@
+# 本地配置（真实用户名/密码/域名），勿提交
+.env.public
+*.local.env
+
+# macOS
+.DS_Store
+
+# 日志
+*.log

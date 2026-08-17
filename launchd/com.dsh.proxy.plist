@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dsh.proxy</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/<YOUR_USER_NAME>/dsh-public-access/proxy/dsh-gateway-proxy.mjs</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AUTH_USER</key>
+    <string>YOUR_AUTH_USERNAME</string>
+    <key>AUTH_PASS</key>
+    <string>YOUR_STRONG_PASSWORD</string>
+    <key>HOME</key>
+    <string>/Users/<YOUR_USER_NAME></string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/dsh-proxy.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/dsh-proxy.log</string>
+</dict>
+</plist>

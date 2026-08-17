@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dsh.web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/opt/homebrew/bin/dsh</string>
+    <string>web</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- SSH_CONNECTION=1：让 DSH 使用"网页浏览式"目录选择器（远程浏览器可用），
+         否则 macOS 上固定走"原生弹窗"选择器，远程访问时无法添加工作区 -->
+    <key>SSH_CONNECTION</key>
+    <string>1</string>
+    <key>HOME</key>
+    <string>/Users/<YOUR_USER_NAME></string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/Users/<YOUR_USER_NAME></string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/dsh-web.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/dsh-web.log</string>
+</dict>
+</plist>
