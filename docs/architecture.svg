@@ -43,6 +43,9 @@
   <text x="728" y="360" text-anchor="middle" font-size="13" font-weight="600" fill="#cf222e">DeepSeek Harness Web</text>
   <text x="728" y="379" text-anchor="middle" font-size="11" fill="#555">127.0.0.1:3080</text>
 
+  <!-- Optional docs note -->
+  <text x="728" y="406" text-anchor="middle" font-size="10" fill="#888">Optional: /docs → local generated files (auth-protected)</text>
+
   <!-- Arrows -->
   <line x1="194" y1="205" x2="266" y2="205" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
   <text x="230" y="196" text-anchor="middle" font-size="11" fill="#555">HTTPS</text>

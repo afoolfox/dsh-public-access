@@ -25,6 +25,7 @@ flowchart LR
         T["cloudflared 隧道<br/>出站 TLS 连接 · 无需公网 IP"]
         P["认证反代 dsh-gateway-proxy.mjs<br/>127.0.0.1:3099<br/>① Basic Auth → 会话 Cookie<br/>② Host/Origin 改写<br/>③ randomUUID polyfill"]
         D["DeepSeek Harness Web<br/>127.0.0.1:3080"]
+        F["（可选）静态文件映射<br/>/docs → 本地生成文件目录"]
     end
 
     B -->|"HTTPS"| E
@@ -32,6 +33,7 @@ flowchart LR
     A -->|"加密隧道"| T
     T -->|"本机 HTTP"| P
     P -->|"改写后的请求头"| D
+    P -.->|"/docs 文件请求"| F
 ```
 
 三条 macOS launchd 服务实现**登录自启 + 崩溃自愈**：`com.dsh.web` / `com.dsh.proxy` / `com.dsh.tunnel`。
@@ -92,6 +94,28 @@ flowchart LR
    curl -s -o /dev/null -w '%{http_code}' https://dsh.your-domain.com/              # 401（无凭据被拒）
    ```
 
+## 静态文件外网映射（可选）
+
+反代内置一个**静态文件映射**：把本地某个目录（比如"本机生成的文档/产物"）通过公网域名直接访问，**同样走前面的认证**。适合把生成好的报告、PDF、Markdown 文档随手分享给已登录的人。
+
+启用方式（设置 `DOCS_ROOT` 即开启，不设置则完全关闭）：
+
+```bash
+AUTH_USER=you AUTH_PASS='超强密码' \
+DOCS_ROOT=/Users/you/documents \
+DOCS_PREFIX=/docs \
+DOCS_TITLE='我的文档' \
+node proxy/dsh-gateway-proxy.mjs
+```
+
+- `https://dsh.your-domain.com/docs/` → 目录列表页（自动生成，隐藏 `.` 开头文件）
+- `https://dsh.your-domain.com/docs/<文件名>` → 文件下载/预览
+  - `.pdf` 浏览器内联预览；`.md/.txt/.html/.json/.csv` 直接展示；其余按附件下载
+  - 已内置常见 MIME：md/pdf/html/json/txt/csv/图片/zip/docx/xlsx/pptx
+- 安全：请求同样必须先通过 Basic/Cookie 认证（未登录 → 401）；内置**路径穿越防护**（解析后必须仍在 `DOCS_ROOT` 内，越界 403）；文件名 UTF-8 处理
+
+> 注意：映射的目录内容就是公网可下载的内容（仅需认证）。只放你想分享的文件，不要把整个家目录映射出去。
+
 ## 安全说明（务必读）
 
 - **认证层是唯一防线**：本方案中 Basic Auth（或 Cloudflare Access）是访问 DSH 的全部门槛。密码必须强、不要外传；`AUTH_PASS` 只通过环境变量/launchd plist 注入，**不要写进 git**。
@@ -112,7 +136,7 @@ flowchart LR
 ```
 README.md / README.en.md     中文 / 英文方案文档
 docs/architecture.svg        架构图（SVG，可直接引用）
-proxy/dsh-gateway-proxy.mjs  认证反代（Cookie 会话 + Host/Origin 改写 + polyfill），唯一"业务代码"
+proxy/dsh-gateway-proxy.mjs  认证反代（Cookie 会话 + Host/Origin 改写 + polyfill + 可选 /docs 文件映射），唯一"业务代码"
 cloudflared/config.example.yml  Cloudflare 隧道配置模板
 launchd/*.plist               三个 macOS 开机自启服务（DSH/反代/隧道）
 scripts/start-public.sh       一键启动反代 + 隧道
@@ -126,6 +150,7 @@ scripts/switch-to-autostart.sh 手动 → launchd 自启切换 + 自动验证
 - **白屏/资源 0 字节** → 检查 DSH 安装目录是否有云同步占位文件（`stat -f "%b" 文件` 为 0 即占位）；把 DSH 移出 OneDrive/iCloud 同步目录。
 - **WebSocket 连不上** → `curl --http1.1 ... -H "Upgrade: websocket"` 应返回 101；若 401 说明认证层挡了升级请求。
 - **隧道 530** → `cloudflared tunnel run dsh` 未运行或 config.yml 的 tunnel ID 不匹配。
+- **`/docs` 打不开** → 反代需以 `DOCS_ROOT=...` 启动；确认目录存在且可读；未登录会先弹 401。
 - 日志：`/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`。
 
 ## License

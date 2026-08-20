@@ -8,15 +8,21 @@
  *   2. 头改写：把 Host / Origin 改写为 127.0.0.1:3080，绕过 DSH 内置的
  *      "/api 浏览器信任围栏"（DNS 重绑定/跨站防护，只认回环 Host）。
  *   3. Polyfill：向 HTML 注入 crypto.randomUUID polyfill，兼容老浏览器/WebView。
+ *   4. （可选）静态文件映射：设置 DOCS_ROOT 后，把本地目录通过 /docs 暴露，
+ *      同样受认证保护 —— 用于把"本地生成的文档/产物"映射到公网访问。
  *
  * 用法：
- *   AUTH_USER=<用户名> AUTH_PASS=<密码> node dsh-gateway-proxy.mjs [listenPort] [targetHost] [targetPort]
+ *   AUTH_USER=<用户名> AUTH_PASS=<密码> \
+ *   [DOCS_ROOT=/本地/文档目录] [DOCS_PREFIX=/docs] [DOCS_TITLE=标题] \
+ *   node dsh-gateway-proxy.mjs [listenPort] [targetHost] [targetPort]
  *   默认: 127.0.0.1:3099 -> 127.0.0.1:3080
  *
  * 要求：Node.js >= 18
  */
 import http from "node:http";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 const AUTH_USER = process.env.AUTH_USER;
 const AUTH_PASS = process.env.AUTH_PASS;
@@ -32,6 +38,102 @@ const TARGET_AUTHORITY = `${TARGET_HOST}:${TARGET_PORT}`;
 const TARGET_ORIGIN = `http://${TARGET_AUTHORITY}`;
 const AUTH_REALM = "DSH";
 const EXPECTED = `${AUTH_USER}:${AUTH_PASS}`;
+
+// ===== 可选：静态文件映射（本地生成文件 → 公网） =====
+// 设置 DOCS_ROOT 后启用：http://<域名>/docs/ 列出目录，/docs/<文件> 下载/预览
+const DOCS_ROOT = process.env.DOCS_ROOT; // 例：/Users/you/docs
+const DOCS_PREFIX = process.env.DOCS_PREFIX ?? "/docs"; // URL 前缀
+const DOCS_TITLE = process.env.DOCS_TITLE ?? "Docs";
+const DOCS_MIME = {
+  ".md": "text/markdown; charset=utf-8",
+  ".pdf": "application/pdf",
+  ".html": "text/html; charset=utf-8",
+  ".json": "application/json",
+  ".txt": "text/plain; charset=utf-8",
+  ".csv": "text/csv; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".zip": "application/zip",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+/** 处理 /docs 前缀的静态文件请求；返回 true 表示已处理。 */
+function serveDocs(req, res) {
+  if (!DOCS_ROOT) return false;
+  const prefix = DOCS_PREFIX.endsWith("/") ? DOCS_PREFIX.slice(0, -1) : DOCS_PREFIX;
+  if (req.url !== prefix && !req.url.startsWith(prefix + "/")) return false;
+
+  let rel;
+  try {
+    rel = decodeURIComponent(new URL(req.url, "http://x").pathname.slice(prefix.length));
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain" });
+    res.end("bad request");
+    return true;
+  }
+
+  // 目录列表
+  if (rel === "" || rel === "/") {
+    let items;
+    try {
+      items = fs.readdirSync(DOCS_ROOT).filter((f) => !f.startsWith("."));
+    } catch {
+      res.writeHead(500, { "content-type": "text/plain" });
+      res.end("cannot read docs root");
+      return true;
+    }
+    const links = items
+      .map((f) => `<li><a href="${prefix}/${encodeURIComponent(f)}">${f}</a></li>`)
+      .join("");
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(
+      `<!doctype html><meta charset="utf-8"><title>${DOCS_TITLE}</title><h2>${DOCS_TITLE}</h2><ul>${links}</ul>`
+    );
+    return true;
+  }
+
+  // 路径穿越防护：解析后必须仍在 DOCS_ROOT 内
+  const filePath = path.resolve(DOCS_ROOT, "." + rel);
+  if (!filePath.startsWith(DOCS_ROOT + path.sep)) {
+    res.writeHead(403, { "content-type": "text/plain" });
+    res.end("forbidden");
+    return true;
+  }
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end("not found");
+    return true;
+  }
+  if (!stat.isFile()) {
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end("not found");
+    return true;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const ctype = DOCS_MIME[ext] ?? "application/octet-stream";
+  // PDF 内联预览，其余作为附件下载（UTF-8 文件名）
+  const disposition =
+    ext === ".pdf"
+      ? "inline"
+      : `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(filePath))}`;
+  res.writeHead(200, {
+    "content-type": ctype,
+    "content-length": stat.size,
+    "content-disposition": disposition,
+  });
+  fs.createReadStream(filePath).pipe(res);
+  return true;
+}
 
 // 会话 Cookie：由凭据派生的固定 token，登录后随响应下发（30 天有效）
 const COOKIE_NAME = "dsh_auth";
@@ -128,6 +230,10 @@ const server = http.createServer((req, res) => {
     res.end("unauthorized");
     return;
   }
+
+  // 静态文件映射（同样走认证）
+  if (serveDocs(req, res)) return;
+
   const options = {
     host: TARGET_HOST,
     port: TARGET_PORT,
@@ -174,4 +280,5 @@ server.on("upgrade", forwardUpgrade);
 
 server.listen(LISTEN_PORT, "127.0.0.1", () => {
   console.log(`[proxy] listening http://127.0.0.1:${LISTEN_PORT} -> ${TARGET_AUTHORITY} (auth: ${AUTH_USER})`);
+  if (DOCS_ROOT) console.log(`[proxy] static docs enabled: ${DOCS_PREFIX} -> ${DOCS_ROOT}`);
 });

@@ -25,6 +25,7 @@ flowchart LR
         T["cloudflared tunnel<br/>outbound TLS · no public IP needed"]
         P["Auth proxy dsh-gateway-proxy.mjs<br/>127.0.0.1:3099<br/>① Basic Auth → session cookie<br/>② Host/Origin rewrite<br/>③ randomUUID polyfill"]
         D["DeepSeek Harness Web<br/>127.0.0.1:3080"]
+        F["(optional) static file mapping<br/>/docs → local generated files"]
     end
 
     B -->|"HTTPS"| E
@@ -32,6 +33,7 @@ flowchart LR
     A -->|"encrypted tunnel"| T
     T -->|"local HTTP"| P
     P -->|"rewritten headers"| D
+    P -.->|"/docs file requests"| F
 ```
 
 Three macOS launchd services provide **auto-start at login + crash recovery**: `com.dsh.web` / `com.dsh.proxy` / `com.dsh.tunnel`.
@@ -92,6 +94,28 @@ Three macOS launchd services provide **auto-start at login + crash recovery**: `
    curl -s -o /dev/null -w '%{http_code}' https://dsh.your-domain.com/                  # 401 (rejected without credentials)
    ```
 
+## Public static file mapping (optional)
+
+The proxy ships an optional **static file mapping**: expose a local directory (e.g. "locally generated documents / artifacts") through the public domain, **behind the same authentication**. Handy for sharing generated reports, PDFs or Markdown docs with people who already have access.
+
+Enable it by setting `DOCS_ROOT` (the feature is fully off when unset):
+
+```bash
+AUTH_USER=you AUTH_PASS='a-very-strong-password' \
+DOCS_ROOT=/Users/you/documents \
+DOCS_PREFIX=/docs \
+DOCS_TITLE='My Docs' \
+node proxy/dsh-gateway-proxy.mjs
+```
+
+- `https://dsh.your-domain.com/docs/` → auto-generated directory listing (hides dotfiles)
+- `https://dsh.your-domain.com/docs/<file>` → download or preview
+  - `.pdf` renders inline in the browser; `.md/.txt/.html/.json/.csv` display directly; everything else downloads as an attachment
+  - Built-in MIME map: md/pdf/html/json/txt/csv/images/zip/docx/xlsx/pptx
+- Security: requests must pass the same Basic/Cookie auth first (401 otherwise); built-in **path-traversal protection** (resolved path must stay inside `DOCS_ROOT`, 403 otherwise); UTF-8 filenames are handled
+
+> Note: everything inside the mapped directory is downloadable from the internet (auth-protected only). Share only what you intend to share — never map your whole home directory.
+
 ## Security notes (please read)
 
 - **The auth layer is the only gate**: Basic Auth (or Cloudflare Access) is the entire barrier in front of DSH. Use a strong password, never share it, and inject `AUTH_PASS` only via environment variables / launchd plists — **never commit it to git**.
@@ -112,7 +136,7 @@ Three macOS launchd services provide **auto-start at login + crash recovery**: `
 ```
 README.md / README.en.md     Chinese / English docs
 docs/architecture.svg        architecture diagram (SVG)
-proxy/dsh-gateway-proxy.mjs  auth proxy (cookie session + Host/Origin rewrite + polyfill) — the only "business code"
+proxy/dsh-gateway-proxy.mjs  auth proxy (cookie session + Host/Origin rewrite + polyfill + optional /docs file mapping) — the only "business code"
 cloudflared/config.example.yml  Cloudflare tunnel config template
 launchd/*.plist              three macOS launchd services (DSH / proxy / tunnel)
 scripts/start-public.sh      start proxy + tunnel in one shot
@@ -126,6 +150,7 @@ scripts/switch-to-autostart.sh  manual → launchd switch + auto-verify
 - **White screen / 0-byte assets** → check whether the DSH install directory contains cloud placeholders (`stat -f "%b" file` → 0 blocks means placeholder); move DSH out of OneDrive/iCloud-synced folders.
 - **WebSocket won't connect** → `curl --http1.1 ... -H "Upgrade: websocket"` should return 101; a 401 means the auth layer is blocking the upgrade.
 - **Tunnel error 530** → `cloudflared tunnel run dsh` is not running or the tunnel ID in `config.yml` doesn't match.
+- **`/docs` won't open** → the proxy must be started with `DOCS_ROOT=...`; make sure the directory exists and is readable; expect a 401 first if not authenticated.
 - Logs: `/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`.
 
 ## License
