@@ -47,6 +47,8 @@ Three macOS launchd services provide **auto-start at login + crash recovery**: `
 | 3 | Login dialog loops forever | Browsers don't attach cached Basic Auth credentials to every subresource / WebSocket | The proxy switches to **cookie-session auth** after the first Basic Auth |
 | 4 | `crypto.randomUUID is not a function` on old mobile browsers | API only exists in Chrome/Edge 92+ (2021) | The proxy injects a `crypto.randomUUID` polyfill into HTML |
 | 5 | Cannot "add workspace" remotely | On macOS DSH always uses the **native dialog** directory picker, invisible to remote browsers | Launch DSH with `SSH_CONNECTION=1` to force the in-browser browse picker |
+| 6 | After upgrading to 0.1.5 the public URL only shows `dsh web authentication required` | The new version generates a **one-time launch token** per start; the only entry is `/?token=…`, and all previous cookies are invalidated | The proxy reads the current token from the startup log and **retries on 401 with it** (transparent to the browser) |
+| 7 | Page turns into mojibake / white screen with binary bytes in the source | DSH compresses HTML according to `Accept-Encoding`, while the proxy injects a polyfill into HTML — **concatenating into a compressed stream corrupts it** | The proxy requests identity encoding upstream (drops `Accept-Encoding`) and skips injection on compressed responses |
 
 ## Quick start
 
@@ -116,6 +118,31 @@ node proxy/dsh-gateway-proxy.mjs
 
 > Note: everything inside the mapped directory is downloadable from the internet (auth-protected only). Share only what you intend to share — never map your whole home directory.
 
+## DSH 0.1.5+ launch token handling
+
+Since 0.1.5, every `dsh web` start generates a **one-time launch token** and prints it in the startup log:
+
+```
+dsh web: http://127.0.0.1:3080/?token=<random>
+```
+
+- The only entry point is the URL carrying `?token=`: it exchanges the token for a signed session cookie (valid 30 days), after which the cookie authenticates
+- Without the token (or with a cookie invalidated by a restart) the page only shows `dsh web authentication required; reopen the URL printed by dsh web.`
+- The token is **random per process and cannot be pinned**; restarts and internal reloads rotate it
+
+How the proxy handles it: **on an upstream 401 it reads the current token from the log and retries once with `?token=`**, completing the 303 → Set-Cookie exchange on the browser's behalf. As a result:
+
+- `https://dsh.your-domain.com/` just works — no manual token URL, no bookmark updates
+- After a DSH restart rotates the token, the next visit silently re-exchanges for a fresh cookie
+
+Relevant environment variable:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DSH_WEB_LOG` | `/tmp/dsh-web.log` | Path to the `dsh web` startup log (the proxy reads the current token from it) |
+
+> If `dsh web` is not started via launchd and logs elsewhere, point `DSH_WEB_LOG` at the real file.
+
 ## Security notes (please read)
 
 - **The auth layer is the only gate**: Basic Auth (or Cloudflare Access) is the entire barrier in front of DSH. Use a strong password, never share it, and inject `AUTH_PASS` only via environment variables / launchd plists — **never commit it to git**.
@@ -148,7 +175,9 @@ scripts/switch-to-autostart.sh  manual → launchd switch + auto-verify
 - **401 / login loop on the index page** → is the proxy running (`lsof -iTCP:3099`)? Retry in an incognito window.
 - **Page 200 but no data** → make sure the tunnel `ingress` points to 3099 (the proxy), not 3080.
 - **White screen / 0-byte assets** → check whether the DSH install directory contains cloud placeholders (`stat -f "%b" file` → 0 blocks means placeholder); move DSH out of OneDrive/iCloud-synced folders.
-- **WebSocket won't connect** → `curl --http1.1 ... -H "Upgrade: websocket"` should return 101; a 401 means the auth layer is blocking the upgrade.
+- **WebSocket won't connect** → `curl --http1.1 ... -H "Upgrade: websocket"` should return 101; a 401 means the auth layer is blocking the upgrade. Note the **0.1.5 WS path is `/api/remote.mux`** (0.1.1 used `/api/events.mux`) — a wrong path yields 502.
+- **Page shows `dsh web authentication required`** → the proxy should retry with the token automatically. If it still appears, verify the `DSH_WEB_LOG` file really contains `?token=…` (`grep -o 'token=[A-Za-z0-9_-]*' /tmp/dsh-web.log | tail -1`) and restart the proxy.
+- **Mojibake / binary bytes in the page source** → DSH's compression collides with polyfill injection; this proxy avoids it by dropping upstream `Accept-Encoding` — check that if you modified the code.
 - **Tunnel error 530** → `cloudflared tunnel run dsh` is not running or the tunnel ID in `config.yml` doesn't match.
 - **`/docs` won't open** → the proxy must be started with `DOCS_ROOT=...`; make sure the directory exists and is readable; expect a 401 first if not authenticated.
 - Logs: `/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`.

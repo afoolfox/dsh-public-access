@@ -47,6 +47,8 @@ flowchart LR
 | 3 | 反复弹登录框"登录个没完" | 浏览器不会把 Basic Auth 凭据自动附加到所有子资源/WebSocket | 反代改为 **Cookie 会话认证** |
 | 4 | 老手机浏览器报 `crypto.randomUUID is not a function` | API 版本过老（Chrome/Edge 92+ 才有） | 反代向 HTML 注入 polyfill |
 | 5 | 远程无法"添加工作区" | macOS 上 DSH 固定用**原生目录弹窗**选择器，远程浏览器看不到 | 用 `SSH_CONNECTION=1` 启动 DSH，切换为网页浏览式选择器 |
+| 6 | 升级 0.1.5 后公网打不开，提示 `dsh web authentication required` | 新版每次启动生成**一次性 launch token**，唯一入口是 `/?token=…`，旧登录 Cookie 全部作废 | 反代读取启动日志里的当前 token，遇 401 **自动带 token 重试**（对浏览器透明） |
+| 7 | 页面变乱码/白屏，源码里混着二进制 | DSH 按 `Accept-Encoding` 压缩 HTML，而反代要往 HTML 注入 polyfill，**压缩流被拼接破坏** | 反代向上游索取未压缩内容（删除 `Accept-Encoding`），压缩响应则放弃注入 |
 
 ## 快速开始
 
@@ -116,6 +118,31 @@ node proxy/dsh-gateway-proxy.mjs
 
 > 注意：映射的目录内容就是公网可下载的内容（仅需认证）。只放你想分享的文件，不要把整个家目录映射出去。
 
+## DSH 0.1.5+ 的 launch token 适配
+
+从 0.1.5 起，`dsh web` 每次启动都会生成一个**一次性 launch token**，并把它打印在启动日志里：
+
+```
+dsh web: http://127.0.0.1:3080/?token=<随机串>
+```
+
+- 唯一入口是带 `?token=` 的 URL：它换取一枚签名的会话 Cookie（30 天有效），之后靠 Cookie 鉴权
+- 不带 token（或 Cookie 已随上次重启作废）时，页面只显示 `dsh web authentication required; reopen the URL printed by dsh web.`
+- token **每个进程随机生成、无法固定**，重启/内部重载都会换
+
+反代对此的处理：**上游返回 401 时，自动从日志里读取当前 token 并带 `?token=` 重试一次**，把这个 303 → Set-Cookie 的过程替浏览器走完。因此：
+
+- 公网地址 `https://dsh.your-domain.com/` 直接可用，**不需要**手动拼 token、不需要更新书签
+- DSH 重启换了新 token 后，第一次访问会自动重新换取 Cookie，无需人工干预
+
+相关环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `DSH_WEB_LOG` | `/tmp/dsh-web.log` | `dsh web` 的启动日志路径（反代从中读取当前 token） |
+
+> 若 `dsh web` 不是通过 launchd 启动、日志写在别处，请用 `DSH_WEB_LOG` 指到实际日志文件。
+
 ## 安全说明（务必读）
 
 - **认证层是唯一防线**：本方案中 Basic Auth（或 Cloudflare Access）是访问 DSH 的全部门槛。密码必须强、不要外传；`AUTH_PASS` 只通过环境变量/launchd plist 注入，**不要写进 git**。
@@ -148,7 +175,9 @@ scripts/switch-to-autostart.sh 手动 → launchd 自启切换 + 自动验证
 - **首页 401/登录框循环** → 检查反代是否在跑（`lsof -iTCP:3099`）；无痕窗口重试。
 - **页面 200 但无数据** → 反代是否在链路中（隧道 ingress 必须指向 3099 而非 3080）。
 - **白屏/资源 0 字节** → 检查 DSH 安装目录是否有云同步占位文件（`stat -f "%b" 文件` 为 0 即占位）；把 DSH 移出 OneDrive/iCloud 同步目录。
-- **WebSocket 连不上** → `curl --http1.1 ... -H "Upgrade: websocket"` 应返回 101；若 401 说明认证层挡了升级请求。
+- **WebSocket 连不上** → `curl --http1.1 ... -H "Upgrade: websocket"` 应返回 101；若 401 说明认证层挡了升级请求。注意 **0.1.5 的 WS 路径是 `/api/remote.mux`**（0.1.1 是 `/api/events.mux`），路径写错会得到 502。
+- **页面提示 `dsh web authentication required`** → 反代应已自动带 token 重试；若仍出现：确认 `DSH_WEB_LOG` 指向的日志里确实有 `?token=…`（`grep -o 'token=[A-Za-z0-9_-]*' /tmp/dsh-web.log | tail -1`），然后重启反代。
+- **页面乱码 / 源码里混着二进制** → DSH 压缩响应与 polyfill 注入冲突；本反代通过删除上游 `Accept-Encoding` 规避，若你自行改过代码请检查这一点。
 - **隧道 530** → `cloudflared tunnel run dsh` 未运行或 config.yml 的 tunnel ID 不匹配。
 - **`/docs` 打不开** → 反代需以 `DOCS_ROOT=...` 启动；确认目录存在且可读；未登录会先弹 401。
 - 日志：`/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`。
