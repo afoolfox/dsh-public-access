@@ -168,6 +168,8 @@ cloudflared/config.example.yml  Cloudflare 隧道配置模板
 launchd/*.plist               三个 macOS 开机自启服务（DSH/反代/隧道）
 scripts/start-public.sh       一键启动反代 + 隧道
 scripts/switch-to-autostart.sh 手动 → launchd 自启切换 + 自动验证
+proxy/nas-gateway-proxy.mjs  通用应用网关反代（NAS / 媒体库等"纯转发"场景：Range、WebSocket 原样透传）
+docs/handoff-nas-deployment.md  交接说明：把局域网 NAS（媒体库）发布到公网，可直接交给另一台机器上的 DSH 执行
 ```
 
 ## 故障排查

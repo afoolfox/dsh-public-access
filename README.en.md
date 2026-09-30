@@ -168,6 +168,8 @@ cloudflared/config.example.yml  Cloudflare tunnel config template
 launchd/*.plist              three macOS launchd services (DSH / proxy / tunnel)
 scripts/start-public.sh      start proxy + tunnel in one shot
 scripts/switch-to-autostart.sh  manual → launchd switch + auto-verify
+proxy/nas-gateway-proxy.mjs  generic app gateway proxy (plain-forwarding scenarios like a NAS / media library: Range and WebSocket pass through untouched)
+docs/handoff-nas-deployment.md  handoff: publish a LAN NAS (media library) to the internet — ready to hand to a DSH on another machine
 ```
 
 ## Troubleshooting
