@@ -1,10 +1,60 @@
-# DSH Public Access — Securely Expose the DeepSeek Harness Web GUI
+# DSH Public Access
+
+**A safe public channel for the DeepSeek Harness Web console: your own domain + authentication + tunnel — usable from a phone, with auto-start at login.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![DSH](https://img.shields.io/badge/DeepSeek%20Harness-0.1.5%2B-4B6BFB.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](https://nodejs.org)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](launchd)
 
 **[English](README.en.md) | [中文](README.md)**
 
-Serve the **DeepSeek Harness Web GUI** — an agent console that by default listens only on `127.0.0.1:3080` — over the public internet on your own domain, reachable from **any device (including phones)**, with **boot-time auto-start**.
+> Not an official DeepSeek project: the author is a DSH user, and this repo fills the gap left by "DSH only listens on localhost". MIT licensed.
+>
+> ⚠️ **Security first**: behind this GUI is a **full agent console that can execute arbitrary commands and read/write any file (equivalent to remote code execution)**. This project **never exposes a bare port** — every public entry must pass an authentication layer.
 
-> ⚠️ Security first: behind this GUI is a **full agent console that can execute arbitrary commands and read/write any file (equivalent to remote code execution)**. This project **never exposes a bare port** — every public entry must pass an authentication layer.
+## 30-second check: do you need this?
+
+| Your situation | Recommendation |
+|---|---|
+| You want your DSH from outside the LAN / from your phone | ✅ Use this project |
+| You only ever use it on the same machine or LAN | ❌ Not needed — `ssh -L 3080:127.0.0.1:3080 user@host` is simpler |
+| You plan to map port 3080 straight to the internet | ⛔ Don't. An unauthenticated DSH hands a shell to the whole internet |
+| Several people share one DSH | 🟡 Possible, but read [Security notes](#security-notes-please-read) first — one shared password is not per-user isolation |
+
+## What it actually solves
+
+DSH listens on `127.0.0.1:3080` only, and every `/api` request and WebSocket goes through a **Host trust fence** (DNS-rebinding defense). So "just put a tunnel in front of it" hits wall after wall — this project fills in all seven (details in [Lessons learned](#why-this-setup-lessons-learned)):
+
+- **Access layer**: cookie-session auth (no Basic Auth loop) + Host/Origin rewrite so DSH accepts the tunnel hostname
+- **Version layer**: handles the one-time launch token introduced in DSH 0.1.5 — after a restart rotates the token, the proxy logs back in automatically; bookmarks keep working
+- **Browser layer**: injects `crypto.randomUUID` for old mobile WebViews and sidesteps the HTML-compression vs. injection conflict
+- **Ops layer**: three launchd services (DSH / proxy / tunnel) give **auto-start at login + crash recovery**
+
+## Shortest working path (~5 minutes, without auto-start)
+
+```bash
+# 0) Dependencies (macOS)
+brew install node cloudflared
+
+# 1) Create a tunnel (opens a browser to authorize your Cloudflare account)
+cloudflared tunnel login
+cloudflared tunnel create dsh
+
+# 2) Configure ingress: point it at the proxy on 3099, not DSH on 3080
+cp cloudflared/config.example.yml ~/.cloudflared/config.yml
+$EDITOR ~/.cloudflared/config.yml      # fill in tunnel ID / user / domain
+
+# 3) Start the auth proxy, create DNS, run the tunnel
+AUTH_USER=you AUTH_PASS='a-long-random-password' node proxy/dsh-gateway-proxy.mjs &
+cloudflared tunnel route dns dsh dsh.example.com
+cloudflared tunnel run dsh
+
+# 4) Verify: 200 with credentials, 401 without
+curl -s -u you:'password' -o /dev/null -w '%{http_code}\n' https://dsh.example.com/
+```
+
+Once it works, do two more things: **add Cloudflare Access** (edge-level email OTP) and **switch to launchd auto-start** (`bash scripts/switch-to-autostart.sh`). Full steps are in Quick start below.
 
 ## Architecture
 
@@ -170,6 +220,10 @@ scripts/start-public.sh      start proxy + tunnel in one shot
 scripts/switch-to-autostart.sh  manual → launchd switch + auto-verify
 proxy/nas-gateway-proxy.mjs  generic app gateway proxy (plain-forwarding scenarios like a NAS / media library: Range and WebSocket pass through untouched)
 docs/handoff-nas-deployment.md  handoff: publish a LAN NAS (media library) to the internet — ready to hand to a DSH on another machine
+CONTRIBUTING.md  how to file issues / PRs, bilingual docs sync rule
+SECURITY.md  how to report vulnerabilities or leaked secrets (never paste passwords in a public issue)
+CHANGELOG.md  release history
+.github/  issue templates (bug / config help) and PR template
 ```
 
 ## Troubleshooting
@@ -183,6 +237,13 @@ docs/handoff-nas-deployment.md  handoff: publish a LAN NAS (media library) to th
 - **Tunnel error 530** → `cloudflared tunnel run dsh` is not running or the tunnel ID in `config.yml` doesn't match.
 - **`/docs` won't open** → the proxy must be started with `DOCS_ROOT=...`; make sure the directory exists and is readable; expect a 401 first if not authenticated.
 - Logs: `/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`.
+
+## Contributing / feedback
+
+- Something doesn't work: open an issue with the [templates](https://github.com/afoolfox/dsh-public-access/issues/new/choose) — **strip domains, passwords and tokens from logs first**.
+- A new DSH version broke the chain: that is the most valuable input this project can get — file an issue with the version and the exact error.
+- Before a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) (Chinese and English docs must change together).
+- Security-sensitive reports (auth bypass, path traversal, leaked credentials): use a private channel, see [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -1,0 +1,51 @@
+name: 配置求助 / Setup help
+description: 域名、隧道、launchd 自启、Cloudflare Access 等配置问题
+title: "[setup] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        配置类问题请尽量给全「卡在哪一步」和「你已经试过什么」，能省掉一轮往返。
+        部署细节（DNS 灰云、DNSSEC、NS 接入）也请一并说明。
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 卡在哪一步
+      options:
+        - 域名接入 / NS 切换
+        - cloudflared 隧道创建或登录
+        - ingress 配置
+        - 反代启动或认证
+        - launchd 自启
+        - Cloudflare Access 策略
+        - 静态文件映射（/docs）
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 你想达到什么效果
+      placeholder: "想在公司网络用手机打开家里的 DSH，域名已接入 Cloudflare"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过什么
+      description: 执行过的命令 + 结果（脱敏后）
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      placeholder: "0.1.7"
+    validations:
+      required: true
