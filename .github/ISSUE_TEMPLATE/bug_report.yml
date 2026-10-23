@@ -1,0 +1,85 @@
+name: 故障报告 / Bug report
+description: 链路跑不通、页面白屏、认证循环、WebSocket 断开等
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **贴日志前请先脱敏**：删掉域名、`AUTH_PASS`、`?token=…`、Cookie。
+        如果你怀疑是安全问题（认证绕过 / 路径穿越 / 凭据泄露），请不要在这里发，见 [SECURITY.md](../../SECURITY.md)。
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      description: 安装包版本，或 `dsh --version` 的输出
+      placeholder: "0.1.7"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 系统版本 / Node 版本 / cloudflared 版本
+      placeholder: "macOS 15.6 · Node 22.14 · cloudflared 2026.7.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth-mode
+    attributes:
+      label: 认证方式
+      description: 你实际开了哪几层
+      multiple: true
+      options:
+        - 反代 Basic Auth + Cookie（本项目默认）
+        - Cloudflare Access（邮箱验证码）
+        - 两者都有
+        - 无认证（直连，仅本机调试）
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象
+      description: 你看到什么？HTTP 状态码、页面提示原文、浏览器 console 报错
+      placeholder: |
+        打开 https://dsh.example.com/ 后页面停在 "dsh web authentication required"
+        curl 返回 401，反代日志 /tmp/dsh-proxy.log 里没有 token 重试记录
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 从哪一步开始不对
+      placeholder: |
+        1. 按 README「最短可用路径」执行到第 3 步
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志（已脱敏）
+      description: 相关的 `dsh-web.log` / `dsh-proxy.log` / `dsh-tunnel.log` 片段
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自查
+      options:
+        - label: 隧道 ingress 指向的是反代 3099，而不是 DSH 的 3080
+          required: false
+        - label: 反代进程在跑（`lsof -iTCP:3099`）
+          required: false
+        - label: 日志里已经删除域名、密码与 token
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞 / Security advisory
+    url: https://github.com/afoolfox/dsh-public-access/security/advisories/new
+    about: 认证绕过、路径穿越、凭据泄露等请走私密报告，不要开公开 issue
+  - name: DSH 本体的问题 / Upstream DSH issues
+    url: https://github.com/deepseek-ai/deepseek-harness/issues
+    about: 与本项目链路无关的 DSH 自身 bug，请提给上游

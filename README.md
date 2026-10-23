@@ -1,10 +1,60 @@
-# DSH Public Access — DeepSeek Harness 公网安全访问方案
+# DSH Public Access
+
+**给 DeepSeek Harness 的 Web 控制台加一条安全的公网通道：自己的域名 + 认证 + 隧道，手机也能用，登录自启。**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![DSH](https://img.shields.io/badge/DeepSeek%20Harness-0.1.5%2B-4B6BFB.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933.svg)](https://nodejs.org)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](launchd)
 
 **[中文](README.md) | [English](README.en.md)**
 
-让 **DeepSeek Harness Web GUI**（默认只监听 `127.0.0.1:3080` 的 Agent 控制台）可以通过你自己的域名，从**任意设备（含手机）安全地公网访问**，并支持开机自启。
+> 非 DeepSeek 官方项目：作者是 DSH 用户，本项目是社区对「DSH 只能本机用」这一空白的补位，MIT 许可。
+>
+> ⚠️ **安全第一**：这个 GUI 背后是**能执行任意命令、读写任意文件的完整 Agent 控制台（等效 RCE）**。本项目默认**绝不裸奔端口**，公网入口必须套一层身份认证。
 
-> ⚠️ 安全第一：这个 GUI 背后是**能执行任意命令、读写任意文件的完整 Agent 控制台（等效 RCE）**。本方案默认**绝不裸奔端口**，公网入口必须套一层身份认证。
+## 30 秒判断：你需要它吗？
+
+| 你的情况 | 建议 |
+|---|---|
+| 想在外网 / 手机上打开自己电脑上的 DSH | ✅ 用本项目 |
+| 只在同一台机器或局域网内用 | ❌ 不需要，`ssh -L 3080:127.0.0.1:3080 user@host` 更简单 |
+| 想把 3080 端口直接映射到公网 | ⛔ 不要。没有认证的 DSH 等于把 shell 交给全网 |
+| 多人共享一个 DSH | 🟡 可以，但先读「[安全说明](#安全说明务必读)」——共享一个密码 ≠ 权限隔离 |
+
+## 它到底解决什么
+
+DSH 默认只监听 `127.0.0.1:3080`，且每个 `/api` 请求和 WebSocket 都过一道 **Host 信任围栏**（防 DNS 重绑定）。所以「随便套个隧道」会连续撞墙——本项目把这 7 堵墙逐个填平（逐条见下方「[踩坑实录](#为什么要这套东西踩坑实录)」）：
+
+- **访问层**：Cookie 会话认证（不再反复弹 Basic Auth）+ Host/Origin 改写，让隧道域名被 DSH 接受
+- **版本层**：适配 DSH 0.1.5+ 的一次性 launch token——重启换 token 后反代自动重新登录，书签不用改
+- **浏览器层**：向老手机 WebView 注入 `crypto.randomUUID`，并绕开 HTML 压缩与注入的冲突
+- **运维层**：三条 launchd 服务（DSH / 反代 / 隧道）实现**登录自启 + 崩溃自愈**
+
+## 最短可用路径（约 5 分钟，不含开机自启）
+
+```bash
+# 0) 依赖（macOS）
+brew install node cloudflared
+
+# 1) 建隧道（会打开浏览器授权你的 Cloudflare 账号）
+cloudflared tunnel login
+cloudflared tunnel create dsh
+
+# 2) 配置 ingress：指向反代 3099，不是 DSH 的 3080
+cp cloudflared/config.example.yml ~/.cloudflared/config.yml
+$EDITOR ~/.cloudflared/config.yml      # 填 tunnel ID / 用户名 / 域名
+
+# 3) 起认证反代 + 建 DNS + 起隧道
+AUTH_USER=you AUTH_PASS='一个很长的随机密码' node proxy/dsh-gateway-proxy.mjs &
+cloudflared tunnel route dns dsh dsh.example.com
+cloudflared tunnel run dsh
+
+# 4) 验证：带密码 200，不带密码 401
+curl -s -u you:'密码' -o /dev/null -w '%{http_code}\n' https://dsh.example.com/
+```
+
+跑通后再做两件事：**叠加 Cloudflare Access**（边缘再一道邮箱验证码）、**换成 launchd 自启**（`bash scripts/switch-to-autostart.sh`）。完整步骤见下方「快速开始」。
 
 ## 架构
 
@@ -170,6 +220,10 @@ scripts/start-public.sh       一键启动反代 + 隧道
 scripts/switch-to-autostart.sh 手动 → launchd 自启切换 + 自动验证
 proxy/nas-gateway-proxy.mjs  通用应用网关反代（NAS / 媒体库等"纯转发"场景：Range、WebSocket 原样透传）
 docs/handoff-nas-deployment.md  交接说明：把局域网 NAS（媒体库）发布到公网，可直接交给另一台机器上的 DSH 执行
+CONTRIBUTING.md              如何提 issue / PR、文档双语同步规则
+SECURITY.md                  漏洞与敏感信息上报方式（请勿在公开 issue 贴密码）
+CHANGELOG.md                 版本变更记录
+.github/                     Issue 模板（故障 / 配置求助）与 PR 模板
 ```
 
 ## 故障排查
@@ -183,6 +237,13 @@ docs/handoff-nas-deployment.md  交接说明：把局域网 NAS（媒体库）�
 - **隧道 530** → `cloudflared tunnel run dsh` 未运行或 config.yml 的 tunnel ID 不匹配。
 - **`/docs` 打不开** → 反代需以 `DOCS_ROOT=...` 启动；确认目录存在且可读；未登录会先弹 401。
 - 日志：`/tmp/dsh-web.log` `/tmp/dsh-proxy.log` `/tmp/dsh-tunnel.log`。
+
+## 参与 / 反馈
+
+- 跑不通：按 [Issue 模板](https://github.com/afoolfox/dsh-public-access/issues/new/choose) 提问，**贴日志请先去掉域名、密码、token**。
+- 有新版本的 DSH 改坏了链路：这正是本项目最需要的输入，欢迎直接开 issue 报版本号 + 报错。
+- 提 PR 前请读 [CONTRIBUTING.md](CONTRIBUTING.md)（中英文档要同步改）。
+- 安全敏感问题（认证绕过、路径穿越、凭据泄露）请走私密渠道，见 [SECURITY.md](SECURITY.md)。
 
 ## License
 
